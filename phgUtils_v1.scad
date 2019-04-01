@@ -27,13 +27,25 @@ $_SUPPORT_THK=0.2;
 
 // Cylinders $fn default
 $_FN_CYL=32;
+function GET_FN_CYL()=$_FN_CYL;
 
 // Epsilon
 $_EPSILON=0.2;
+function GET_EPSILON()=$_EPSILON;
 
 /* Simple translation */
 module tr(dx,dy=0,dz=0) {
     translate([dx,dy,dz]) children();
+}
+
+/* Z-translation */
+module trz(dz) {
+    translate([0,0,dz]) children();
+}
+
+/* Simple rotation */
+module rot(ax,ay=0,az=0) {
+    rotate([ax,ay,az]) children();
 }
 
 /* Translate and rotate children */
@@ -42,8 +54,8 @@ module trrot(tx,ty,tz,ax,ay=0,az=0) {
 }
 
 /* translated cube */
-module trcube(tx,ty,tz,dx,dy,dz) {
-    translate([tx,ty,tz]) cube([dx,dy,dz]);
+module trcube(tx,ty,tz,dx,dy,dz,center=false) {
+    translate([tx,ty,tz]) cube(size=[dx,dy,dz],center=center);
 }
 
 /* translated cube with epsilons along Z */
@@ -56,13 +68,34 @@ module trcyl(tx,ty,tz,d,h,center=false,fn=$_FN_CYL) {
 	translate([tx,ty,tz]) cylinder(d=d,h=h,center=center,$fn=fn);
 }
 
+/* translated cone */
+module trcone(tx,ty,tz,d1,d2,h,center=false,fn=$_FN_CYL) {
+	translate([tx,ty,tz]) cylinder(d1=d1,d2=d2,h=h,center=center,$fn=fn);
+}
+
+/* cylinder with epsilon along Z axis */
+module cyl_eps(d,h,center=false,fn=$_FN_CYL) {
+    cylinder(d=d,h=h+2*$_EPSILON,center=center,$fn=fn);
+}
+
 /* translated cylinder with epsilon along height (Z) */
 module trcyl_eps(tx,ty,tz,d,h,center=false,fn=$_FN_CYL) {
-    translate([tx,ty,tz-$_EPSILON]) cylinder(d=d,h=h+2*$_EPSILON,center=center,$fn=fn);
+    translate([tx,ty,tz-$_EPSILON]) cyl_eps(d,h,center=center,fn=fn);
 }
 
 module trrotcyl(tx,ty,tz,ax,ay,az,d,h,center=false,fn=$_FN_CYL) {
 	trrot(tx,ty,tz,ax,ay,az) cylinder(d=d,h=h,center=center,$fn=fn);
+}
+
+module tube(dint,dout,h,center,fn=$_FN_CYL) {
+    difference() {
+        cylinder(d=dout,h=h,center=center,$fn=fn);
+        cylinder(d=dint,h=h,center=center,$fn=fn);
+    }
+}
+
+module trrottube(tx,ty,tz,ax,ay,az,dout,dint,h,center=false,fn=$_FN_CYL) {
+	trrot(tx,ty,tz,ax,ay,az) tube(dout=dout,dint=dint,h=h,center=center,$fn=fn);
 }
 
 /* translated and rotated cylinder with epsilon along height (Z) */
@@ -71,8 +104,13 @@ module trrotcyl_eps(tx,ty,tz,ax,ay,az,d,h,center=false,fn=$_FN_CYL) {
 }
 
 /* translated and rotated cube */
-module trrotcube(tx,ty,tz,ax,ay,az,dx,dy,dz) {
-    trrot(tx,ty,tz,ax,ay,az) cube([dx,dy,dz]);
+module trrotcube(tx,ty,tz,ax,ay,az,dx,dy,dz,center=false) {
+    trrot(tx,ty,tz,ax,ay,az) cube([dx,dy,dz],center=center);
+}
+
+/* rotated and translated cube */
+module rottrcube(tx,ty,tz,ax,ay,az,dx,dy,dz,center=false) {
+    rotate([ax,ay,az]) tr(tx,ty,tz) cube([dx,dy,dz],center=center);
 }
 
 /* Translated rotate cube with diff children (in cube referential) */
@@ -182,7 +220,7 @@ module cornerPos(w,l,h,x,y,center=true) {
 }
 
 /* Position children at each 4 corners of centered cube */ 
-module cornersPos(w,l,h,center=true) {
+module cornersPos(w,l,h=0,center=true) {
  for(x=[-1,1]) {
         for(y=[-1,1]) {
             cornerPos(w,l,h,x,y,center=center) children();
@@ -230,10 +268,11 @@ module triangle(dx,dy,h,a=0) {
     }
 }
 
-module roundedFlatBox(dx,dy,h,r) {
+module roundedFlatBox(dx,dy,h,r,center=false) {
+    translate([center?r-dx/2:r,center?r-dy/2:r]) 
     linear_extrude(height=h)
     offset(r=r)
-    translate([r,r]) square([dx-2*r,dy-2*r]);
+    square([dx-2*r,dy-2*r]);
 }
 
 module roundedBoundingBox(dx,dy,dz,rx,ry,rz) {

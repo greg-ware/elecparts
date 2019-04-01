@@ -14,7 +14,7 @@
  *    Creative Commons, PO Box 1866, Mountain View, CA 94042, USA.
 */
 
-use <TronxyX5S\phgUtils_v1.scad>
+use <phgUtils_v1.scad>
 
 // Thickness
 thk=5;
@@ -93,26 +93,37 @@ module _cylchamp(length,diam,rotz=0) {
     }
 }
 
-
-module straightSupport(dx,dy,diam) difference() {    
-    union() {
-        // support
-        roundedFlatBox(dx,dy,thk,rnd,center=true);
+/* Generate multiple parallel supports 
+    diamSpacings contains an array of diameters followed by spacing
+*/
+module multipleStraight(dx,dy,diamSpacings) {
+    difference() {
+        union() {
+            // support
+            tr(0,dy/2) roundedFlatBox(dx,dy,thk,rnd,center=true);
+            for(iD=[0:2:len(diamSpacings)-1]) {
+                // support and outer tube
+                tr(-dx/2,diamSpacings[iD]) _hullcyl(dx,diamSpacings[iD+1]);
+            }
+        }
+        for(iD=[0:2:len(diamSpacings)-1]) {
+            diam=diamSpacings[iD+1];
+            trrot(-_EPSILON-dx/2,diamSpacings[iD],zOff(diam),0,90,0) {
+                // Inner tube
+                cyl_eps(diam,dx);
+                
+                // Champfers
+                cylinder(d1=diam+champDepth/2,d2=diam,champDepth+_EPSILON);
+                trcone(0,0,dx-champDepth+2*_EPSILON,diam,diam+champDepth/2,champDepth+_EPSILON);
+            }
+        }
         
-        // support and outer tube
-        tr(-dx/2) _hullcyl(dx,diam);
+        tr(0,dy/2) _screwHoles(dx,dy);
     }
+}
 
-    trrot(-_EPSILON-dx/2,0,zOff(diam),0,90,0) {
-        // Inner tube
-        cyl_eps(diam,dx);
-        
-        // Champfers
-        cylinder(d1=diam+champDepth/2,d2=diam,champDepth+_EPSILON);
-        trcone(0,0,dx-champDepth+2*_EPSILON,diam,diam+champDepth/2,champDepth+_EPSILON);
-    }
-    
-    _screwHoles(dx,dy);
+module straightSupport(dx,dy,diam) difference() {
+    multipleStraight(dx,dy,[dy/2,diam]);
 }
 
 module cornerSupport(dx,dy,diam) difference() {
@@ -195,9 +206,19 @@ module roundSupport(dx,dy,diam) {
 
 $fn=GET_FN_CYL();
 
+/* Generate a short (2 holes) straight support */
 //tr(40) 
-straightSupport(20,60,20+_EPSILON*2);
+//straightSupport(20,60,20+_EPSILON*2);
+
+/* Generate a long (4 holes) straight support */
+//tr(40) 
+//straightSupport(40,60,20+_EPSILON*2);
+
+/* Generate a corner support */
 //tr(-40) 
 //cornerSupport(80,60,20+1);
 
+/* Generate a rounded support */
 //roundSupport(60,60,20+_EPSILON*2);
+
+multipleStraight(20,130,[30,20+_EPSILON*2,55,20+_EPSILON*2,80,20+_EPSILON*2,105,16+_EPSILON*2]);
