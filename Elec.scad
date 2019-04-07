@@ -1,9 +1,10 @@
 /*
  *
- +--------------------------------------------------------------------------
+ +-------------------------------------------------------------------------
  * History
  * Date       Version Author      Description
  * 2019/02/11  v1     Ph.Gregoire Initial version
+ * 2019/04/09  v1.1   Ph.Gregoire Multiple Straight and Round capabilities
  +-------------------------------------------------------------------------
  *
  *  This work is licensed under the 
@@ -12,6 +13,58 @@
  *    http://creativecommons.org/licenses/by/3.0/ 
  *  or send a letter to 
  *    Creative Commons, PO Box 1866, Mountain View, CA 94042, USA.
+*/
+
+/* ======================
+    Readme
+   
+    # Introduction
+    This openscad module allows to produce electrical cabling system
+    fastening elements, either to hold straight tubes in place, or to 
+    serve as rounded corner elements.
+   
+    # Warning
+    USE AT YOUR OWN RISK! No live wire should be exposed inside those
+    elements, their role is just to fasten the electrical tubes in place.
+    Especially, keep in mind that PLA or ABS printed elements may not
+    have enough strength and may break loose.
+   
+    # Usage
+    There are essentially two module to use as entry points:
+   
+    1. Straight fastening clamps:
+        `multipleStraight(width,diameters,spacings,[epsilon])`
+        Will place multiple rings of specified diameters at specified spacings
+        For example, `multipleStraight(20,[16,20,16],[25,35])` will generate
+        fastenings for 3 tubes of diameters 16, 20 and 16, spaced at 
+        25 and 35 from each others, of width 20.
+        The optional epsilon parameter will make the tubes a bit wider:
+        * A value of 2*_EPSILON is good for a tight fit
+        * A value of 3*_EPSILON is good for a loose fit
+        Screw holes are placed by 2 or 4 depending on the width.
+        
+        Note that:
+        * a single-tube fastener can be obtained with the form
+        `multipleStraight(width,diameter,_eps=epsilon)`
+        * If the spacings are the same they can be specified with a single 
+        integer rather than an array, i.e.  `multipleStraight(width,diameters,spacing,[epsilon])`
+        
+    2. Rounded corner fastenings:
+        `multipleRound(diameters,spacingsX,spacingsT,[epsilon])`
+        Will create an series of corner tubes of the specified diameters,
+        where the spacings along the X and Y sides are as specified by 
+        the two arrays.
+        For example, `multipleRound([20,16,20],[25,30],[30,40],_eps=_EPSILON*2)`
+        will generate 3 tubes spaced 25,30 along the X axis and 30,40 along the Y axis.
+       
+        Note that:
+        * A single-tube corner can be obtained with `multipleRound(diam,_eps=epsilon)`
+        * When an even spacing is required, it can be specified as a
+        single integer rather than an array, i.e. 
+        `multipleRound(diams,spacingX,spacingY,_eps=epsilon)`
+        * if `spacingY` is omitted or of 0 length (i.e. `[]`), it will default to `spacingsX`
+        * To make merging tubes, specify the spacing as 0
+        * Tubes always turn right, for the opposite, apply a mirror operation
 */
 
 use <phgUtils_v1.scad>
@@ -287,6 +340,10 @@ module roundHole(inlet,outlet,thk,diam) {
 module multipleRound(diams,spacingsX=[],spacingsY=[],_eps=0) {
     diams=(len(diams)==undef)?[diams]:diams;
     
+    diamsMax=len(diams)-1;
+    spacingsX=(len(spacingsX)!=undef)?spacingsX:((diamsMax<1)?[]:[for(i=[0:diamsMax-1]) spacingsX]);
+    spacingsY=(len(spacingsY)!=undef)?((len(spacingsY)==0)?spacingsX:spacingsY):((diamsMax<1)?[]:[for(i=[0:diamsMax-1]) spacingsY]);
+    
     // Offsets to position screw holes and rounding of base plate
     screwOff=screwDiam+screwHead;
     diamsMax=len(diams)-1;
@@ -447,7 +504,7 @@ $fn=GET_FN_CYL();
 //tr(40) 
 //straightSupport(40,60,20+_EPSILON*2);
 //tr(-40) multipleStraight(40,20,_EPSILON*3);
-multipleStraight(20,[20,20],45,_EPSILON*3);
+//multipleStraight(20,[20,20],45,_EPSILON*3);
 
 /* Generate a corner support */
 //tr(-40) 
@@ -465,8 +522,17 @@ multipleStraight(20,[20,20],45,_EPSILON*3);
 /* Rounded support */
 //multipleRound([20,20,20,16],[45,45,20],[25,25,25],_EPSILON*2);
 //multipleRound(20,_eps=_EPSILON*2);
+
 /* Round one input two outputs */
-//multipleRound([20,20],[25],[0],_eps=_EPSILON*2);
+//multipleRound([20,16,20],[25,30],[30,40],_eps=_EPSILON*2);
+
+/* Single round corner, diameter 20 */
+//multipleRound(20,_eps=_EPSILON*2);
+
+/* Merging tubes */
+//multipleRound([20,20],30,0,_eps=_EPSILON*2);
+
+/* Complex merging tubes */
+multipleRound([20,20,20],[ 30,0] ,[0,25] ,_eps=_EPSILON*2);
 
 //straightRound([20,20],[25],[undef],_eps=_EPSILON*2);
-
