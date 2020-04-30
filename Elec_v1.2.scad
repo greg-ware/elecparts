@@ -1,4 +1,6 @@
-/*
+/* Electrical tubings generator
+ *
+ * Requires OpenSCAD 2019.05
  *
  +-------------------------------------------------------------------------
  * History
@@ -88,7 +90,7 @@ screwDiam=4.5;
 screwHead=8;
 
 // Tolerance...
-_EPSILON=GET_EPSILON();
+_EPSILON=$preview?GET_EPSILON():0;
 
 module _screwHole() {
     cyl_eps(screwDiam,thk);
@@ -109,15 +111,30 @@ module _screwHoles(dx,dy) {
 function bw(diam)=diam+thk+2*squash;
 function zOff(diam)=diam/2+thk/2;
 
+/* Cylinder with base hulled
+*/
 module _hullcyl(length,diam,rotz=0,halfTapper=false) {
-    bw=bw(diam);
     rot(0,0,rotz) _hull() {
+        _hullcylPart(1,length,diam,halfTapper);
+        _hullcylPart(2,length,diam,halfTapper);
+    }
+}
+
+/* Hull cylinder part 
+    partID 1: support
+    partID 2: cylinder
+*/
+module _hullcylPart(partID,length,diam,halfTapper=false) {
+    bw=bw(diam);
+    if(partID==1) {
         tr(0,-bw/2) if(halfTapper)
             intersection() {
                 tr(-rnd*2) roundedFlatBox(length+rnd*2,bw,thk,rnd*2);
                 cube([length,bw,thk]);
             }
         else roundedFlatBox(length,bw,thk,rnd*2);
+    }
+    if(partID==2) {
         trrotcyl(0,0,zOff(diam),0,90,0,diam+thk,length);
     }
 }
@@ -171,7 +188,28 @@ function sigma0(arr,i) = ((i==0)?0:sigma(arr,i-1));
 /* Generate multiple parallel supports 
     diamSpacings contains an array of spacings followed by diameter
 */
-module multipleStraight(dx,diams,spacings=[],_eps=0) {
+module multipleStraight(dx,diams,spacings=[],thickHull=false,_eps=0) {
+    difference() {
+        for(p=[1:2]) _multipleStraightPart(p,true,dx,diams,spacings,thickHull,_eps);
+        for(p=[1:2]) _multipleStraightPart(p,false,dx,diams,spacings,thickHull,_eps);
+    }
+}
+/* Create either a plain union or a hull of the children
+*/
+module hullOrUnion(doHull) {
+    if(doHull) _hull() children();
+    else union() children();
+}
+
+/* Generates the parts for multiple supports
+    partID 1: support (base and screw holes)
+    partID 2: tubes
+    partID 3: tubes with no bottom (inner tubes only)
+
+    partID 11: only hullbase no tube
+    partID 12: only tubes no hull
+*/
+module _multipleStraightPart(partID,isOuter,dx,diams,spacings,thickHull,_eps) {
     diams=is_list(diams)?diams:[diams];
     diamsMax=len(diams)-1;
     spacings=is_list(spacings)?spacings:((diamsMax<1)?[]:[for(i=[0:diamsMax-1]) spacings]);
@@ -186,37 +224,99 @@ module multipleStraight(dx,diams,spacings=[],_eps=0) {
     dy=plateInnerBorder+sigma(spacings)+plateOuterBorder;
     yS=[for(iD=[0:diamsMax]) plateInnerBorder+sigma0(spacings,iD)];
         
-    echo("dx=",dx," dy=",dy);
-    
-    difference() {
-        union() {
-            // support
-            tr(0,dy/2) roundedFlatBox(dx,dy,thk,rnd,center=true);
-            
-            for(iD=[0:diamsMax]) {
-                // support and outer tube
-                tr(-dx/2,yS[iD]) _hullcyl(dx,diams[iD]+_eps);
+    if(isOuter) {
+        // support
+        if(partID==1)
+        tr(0,dy/2) roundedFlatBox(dx,dy,thk,rnd,center=true);
+        
+        // outer tubes
+        if(partID==2 || partID==11 || partID==12)
+        hullOrUnion(thickHull && (partID==2)) for(iD=[0:diamsMax]) {
+            hullOrUnion(!thickHull && (partID==2)) {
+                tr(-dx/2,yS[iD]) {
+                    if(partID==2 || partID==11) _hullcylPart(1,dx,diams[iD]+_eps);
+                    if(partID==2 || partID==12) _hullcylPart(2,dx,diams[iD]+_eps);
+                }
             }
         }
+    } else {
+        // support screw holes
+        if(partID==1)
+        tr(0,dy/2) _screwHoles(dx,dy);
+
+        // Inner tubes
+        if(partID==2 || partID==3)
         for(iD=[0:diamsMax]) {
             diam=diams[iD]+_eps;
             trrot(-_EPSILON-dx/2,yS[iD],zOff(diam),0,90,0) {
                 // Inner tube
                 cyl_eps(diam,dx);
+                if(partID==3)
+                    trcube_eps(0,-diam/2,0,zOff(diam)+_EPSILON,diam,dx+_EPSILON);
                 
                 // Champfers
-                cylinder(d1=diam+champDepth/2,d2=diam,champDepth+_EPSILON);
-                trcone(0,0,dx-champDepth+2*_EPSILON,diam,diam+champDepth/2,champDepth+_EPSILON);
+                ch=champDepth/2;
+                cylinder(d1=diam+ch,d2=diam,champDepth+_EPSILON);
+                trcone(0,0,dx-champDepth+2*_EPSILON,diam,diam+ch,champDepth+_EPSILON);
+
+                if(partID==3)
+                    for(dy_a=[[-diam/2-ch/2,180],[diam/2,90]]) {
+                        rot(0,90) tr(-champDepth,dy_a[0],0)
+                            prism(champDepth,ch/2,zOff(diam)+_EPSILON,dy_a[1]);
+                        rot(180,-90) tr(-champDepth+dx+_EPSILON+_EPSILON,dy_a[0],0)
+                            prism(champDepth,ch/2,zOff(diam)+_EPSILON,dy_a[1]);
+                    }
+                    
+            }
+        }            
+    }
+}
+
+module trStacked(i,diams,spacingsZ) {
+    trz((i==0)?0:(spacingsZ[i-1]==undef)?max(diams[i-1]):spacingsZ[i-1]) children();
+}
+
+/* Generate multiple parallel supports 
+    diamSpacings contains an array of spacings followed by diameter
+*/
+module multipleStackedStraight(dx,diams,spacings=[],spacingsZ=undef,_eps=0) {
+    spacingsZ=is_list(spacingsZ)?spacingsZ:[spacingsZ];
+    
+    // which level to use support from
+    supportLevel=1;
+    
+    difference() {
+        union() {
+            // Support for selected level, not translated
+            _multipleStraightPart(1,true,dx,diams[supportLevel],spacings[supportLevel],false,_eps);
+
+            _hull() {
+                // Support and tubes for bottom level
+                _multipleStraightPart(2,true,dx,diams[0],spacings[0],false,_eps);
+                
+                // tubes only for all levels above
+                for(i=[1:len(diams)-1]) {
+                    _multipleStraightPart(11,true,dx,diams[i],spacings[i],false,_eps);
+                    trStacked(i,diams,spacingsZ)
+                        _multipleStraightPart(12,true,dx,diams[i],spacings[i],false,_eps);
+                }
             }
         }
         
-        tr(0,dy/2) _screwHoles(dx,dy);
+        union() {
+            // Support screws for selected level
+            _multipleStraightPart(1,false,dx,diams[supportLevel],spacings[supportLevel],false,_eps);
+            
+            // Tubes holes for all levels
+            for(i=[0:len(diams)-1])
+                trStacked(i,diams,spacingsZ)
+                    _multipleStraightPart(i==0?3:2,false,dx,diams[i],spacings[i],false,_eps);
+        }
     }
-
 }
 
-module straightSupport(dx,dy,diam,_eps=0) difference() {
-    multipleStraight(dx,dy,[dy/2,diam],_eps);
+module straightSupport(dx,dy,diam,thickHull=false,_eps=0) difference() {
+    multipleStraight(dx,dy,[dy/2,diam],thickHull,_eps);
 }
 
 module cornerSupport(dx,dy,diam) difference() {
@@ -469,13 +569,13 @@ $fn=GET_FN_CYL();
 /* Generate a short (2 holes) straight support */
 //tr(40) 
 //straightSupport(20,60,20+_EPSILON*2);
-//multipleStraight(20,20,_EPSILON*3);
+//multipleStraight(20,20,false,_EPSILON*3);
 
 /* Generate a long (4 holes) straight support */
 //tr(40) 
 //straightSupport(40,60,20+_EPSILON*2);
-//tr(-40) multipleStraight(40,20,_EPSILON*3);
-//multipleStraight(20,[20,20],45,_EPSILON*3);
+//tr(-40) multipleStraight(40,20,false,_EPSILON*3);
+//multipleStraight(20,[20,20],45,false,_EPSILON*3);
 
 /* Generate a corner support */
 //tr(-40) 
@@ -485,10 +585,14 @@ $fn=GET_FN_CYL();
 //roundSupport(60,60,20+_EPSILON*2);
 
 /* Generate supports for 4 tubes of diams 16,20,20,20 spaced by 25mm */
-//tr(40) multipleStraight(20,[20,20,20,16],25,_EPSILON*3);
+//tr(40) multipleStraight(20,[20,20,20,16],25,false,_EPSILON*3);
 
 /* Support that matches the 20-20-20-26/45-45-20 rounded one */
-//multipleStraight(20,[20,20,20,16],[45,45,20],_EPSILON*3);
+//multipleStraight(20,[20,20,20,16],[45,45,20],false,_EPSILON*3);
+/* Same but with thick hull */
+//multipleStraight(20,[20,20,20,16],[45,45,20],true,_EPSILON*3);
+
+multipleStackedStraight(20,[[16+2,20+2],[20+1,20+1,16+1]],[[40],[25,25]],[],_EPSILON*3);
 
 /* Rounded support */
 //multipleRound([20,20,20,16],[45,45,20],[25,25,25],_EPSILON*2);
@@ -504,6 +608,6 @@ $fn=GET_FN_CYL();
 //multipleRound([20,20],30,0,_eps=_EPSILON*2);
 
 /* Complex merging tubes */
-multipleRound([20,20,20],[ 30,0] ,[0,25] ,_eps=_EPSILON*2);
+//multipleRound([20,20,20],[ 30,0] ,[0,25] ,_eps=_EPSILON*2);
 
 //straightRound([20,20],[25],[undef],_eps=_EPSILON*2);

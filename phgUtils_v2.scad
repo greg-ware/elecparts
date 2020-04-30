@@ -7,7 +7,7 @@
  *   - shorter macro modules to get a cube or cylinder with translation and rotation
  *   -  Due to some display defects in OpenSCAD preview (F5), some can use a small epsilon 
  *      so as to cut protruding apertures in solids
- *   - useful modules to build rounded corner cubes, triangle (wedges), etc
+ *   - useful modules to build rounded corner cubes, prism (wedges), etc
  *
  * History
  * Date       Author      Description
@@ -46,8 +46,13 @@ module trz(dz) {
 }
 
 /* Simple rotation */
-module rot(ax,ay=0,az=0) {
+module rot(ax=90,ay=0,az=0) {
     rotate([ax,ay,az]) children();
+}
+
+/* Simple rotation */
+module rotY(ay=90) {
+    rotate([0,ay,0]) children();
 }
 
 /* Translate and rotate children */
@@ -230,7 +235,6 @@ module cornersPos(w,l,h=0,center=true) {
     }
 }
 
-
 /* Quarter Cone */
 module quarterCone(r1,r2,h) {
     intersection() {
@@ -256,9 +260,14 @@ module champfer(rounding,h) {
     }
 }
 
-/* Triangle by extrusion. the a parameter is the rotation angle */
+/* Deprecated, use prism() */
 module triangle(dx,dy,h,a=0) {
-    if(a<0) triangle(dx,dy,h,a=a+360);
+    prism(dx,dy,h,a);
+}
+
+/* Prism by extrusion of q triqngle. The a parameter is the rotation angle */
+module prism(dx,dy,h,a=0) {
+    if(a<0) prism(dx,dy,h,a=a+360);
     else {
         a=a%360;
         linear_extrude(height=h) {
@@ -322,7 +331,7 @@ test();
 module test() {
     $fn=$_FN_CYL;
     
-    //triangle(30,20,10,270);
+    //prism(30,20,10,270);
     //quarterCyl(5,10);
     //champfer(5,10);
     roundedBoundingBox(40,50,20,5,10,7);
