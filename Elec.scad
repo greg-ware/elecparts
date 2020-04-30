@@ -110,7 +110,7 @@ function zOff(diam)=diam/2+thk/2;
 
 module _hullcyl(length,diam,rotz=0,halfTapper=false) {
     bw=bw(diam);
-    rot(0,0,rotz) hull() {
+    rot(0,0,rotz) _hull() {
         tr(0,-bw/2) if(halfTapper)
             intersection() {
                 tr(-rnd*2) roundedFlatBox(length+rnd*2,bw,thk,rnd*2);
@@ -121,12 +121,14 @@ module _hullcyl(length,diam,rotz=0,halfTapper=false) {
     }
 }
 
+/* Hull wrapper for faster preview */
 module _hull() {
-    #union() children();
+    if($preview) children();
+    else hull() children();
 }
 
 module _hullify(h,dz) {
-    hull() {
+    _hull() {
         trz(-dz)
         linear_extrude(height=h) 
         offset(r=squash)
@@ -227,7 +229,7 @@ module cornerSupport(dx,dy,diam) difference() {
         _hullcyl(dy/2,diam,90);
         
         // Central sphere
-        hull() {
+        _hull() {
             tr(-bw/2,-bw/2) roundedFlatBox(bw,bw,thk,rnd*2);
             trz(zOff(diam)) sphere(d=diam+thk);
         }
@@ -346,7 +348,6 @@ module multipleRound(diams,spacingsX=[],spacingsY=[],_eps=0) {
     
     // Offsets to position screw holes and rounding of base plate
     screwOff=screwDiam+screwHead;
-    diamsMax=len(diams)-1;
     
     plateInnerBorder=(diams[0]+_eps)/2+thk+screwOff;
     plateOuterBorder=(diams[diamsMax]+_eps)/2+thk+screwOff;

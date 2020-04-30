@@ -26,11 +26,12 @@
 $_SUPPORT_THK=0.2;
 
 // Cylinders $fn default
-$_FN_CYL=32;
+$_FN_CYL=$preview?12:32;
 function GET_FN_CYL()=$_FN_CYL;
 
 // Epsilon
 $_EPSILON=0.2;
+//function GET_EPSILON()=$preview?$_EPSILON:0;
 function GET_EPSILON()=$_EPSILON;
 
 /* Simple translation */
@@ -286,6 +287,8 @@ module roundedBoundingBox(dx,dy,dz,rx,ry,rz) {
 test();
 
 module test() {
+    $fn=$_FN_CYL;
+    
     //triangle(30,20,10,270);
     //quarterCyl(5,10);
     //champfer(5,10);
