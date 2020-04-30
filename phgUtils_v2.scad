@@ -10,9 +10,10 @@
  *   - useful modules to build rounded corner cubes, triangle (wedges), etc
  *
  * History
- * Date         Author      Description
- * 2017/??/??   Ph.Gregoire Initial version(s)
- * 2018/07/18   Ph.Gregoire Rework for X5S corners
+ * Date       Author      Description
+ * 2017/??/?? Ph.Gregoire Initial version(s)
+ * 2018/07/18 Ph.Gregoire Rework for X5S corners
+ * 2020/04/30 Ph.Gregoire V2: Functions from Elec.scad
  *
  *  This work is licensed under the 
  *  Creative Commons Attribution 3.0 Unported License.
@@ -283,6 +284,38 @@ module roundedBoundingBox(dx,dy,dz,rx,ry,rz) {
         scale([rx/r,ry/r,rz/r]) sphere(r);
     }
 }
+
+/* Generate a quater of a torus */
+module quarterTorus(r,d) {
+    intersection() {
+        rot(0,0,180) trcube(0,0,-d/2,r+d/2,r+d/2,d);
+        rotate_extrude(convexity = 2) {
+            tr(r) circle(d=d);
+        }
+    }
+}
+
+/* Square with one rounded corner */
+module roundedSquare(d,h) {
+    cylinder(d=d,h=h);
+    trcube(-d/2,0,0,d/2,d/2,h);
+    trcube(0,-d/2,0,d/2,d/2,h);
+    trcube(0,0,0,d/2,d/2,h);
+}
+
+/* Utility to have a rectangle with the far most corner rounded */
+module roundedRect(dx,dy,r,h) {
+    union() {
+        intersection() {
+            trcyl(dx-r,dy-r,h/2,d=r*2,h=h,center=true);
+            trcube(dx-r/2,dy-r/2,h/2,r,r,h,center=true);
+        }
+        trcube(0,dy-r,0,dx-r,r,h);
+        trcube(dx-r,0,0,r,dy-r,h);
+        trcube(0,0,0,dx-r,dy-r,h);
+    }
+}
+
 
 test();
 

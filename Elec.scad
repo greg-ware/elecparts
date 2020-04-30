@@ -67,7 +67,7 @@
         * Tubes always turn right, for the opposite, apply a mirror operation
 */
 
-use <phgUtils_v1.scad>
+use <phgUtils_v2.scad>
 
 // Thickness
 thk=5;
@@ -244,36 +244,6 @@ module cornerSupport(dx,dy,diam) difference() {
     _screwHoles(dx,dy);
 }
 
-module quartTorus(r,d) {
-    intersection() {
-        rot(0,0,180) trcube(0,0,-d/2,r+d/2,r+d/2,d);
-        rotate_extrude(convexity = 2) {
-            tr(r) circle(d=d);
-        }
-    }
-}
-
-/* Square with one rounded corner */
-module roundedSquare(d,h) {
-    cylinder(d=d,h=h);
-    trcube(-d/2,0,0,d/2,d/2,h);
-    trcube(0,-d/2,0,d/2,d/2,h);
-    trcube(0,0,0,d/2,d/2,h);
-}
-
-/* Utility to have a rectangle with the far most corner rounded */
-module roundedRect(dx,dy,r,h) {
-    union() {
-        intersection() {
-            trcyl(dx-r,dy-r,h/2,d=r*2,h=h,center=true);
-            trcube(dx-r/2,dy-r/2,h/2,r,r,h,center=true);
-        }
-        trcube(0,dy-r,0,dx-r,r,h);
-        trcube(dx-r,0,0,r,dy-r,h);
-        trcube(0,0,0,dx-r,dy-r,h);
-    }
-}
-
 /* Support with a rounded corner shape
 */
 module roundSupport(dx,dy,diam) {
@@ -295,7 +265,7 @@ module roundSupport(dx,dy,diam) {
             tr(0,offT) _hullcyl(dy/2-offT,diam,90,true);
             
             // Rounding
-            tr(offT,offT,zOff(diam)) _hullify(thk,diam/2+thk/2) quartTorus(offT,diam+thk);
+            tr(offT,offT,zOff(diam)) _hullify(thk,diam/2+thk/2) quarterTorus(offT,diam+thk);
         }
 
         trz(zOff(diam)) {
@@ -304,7 +274,7 @@ module roundSupport(dx,dy,diam) {
             tr(0,offT-_EPSILON) _cylchamp(dy/2-offT+_EPSILON,diam,-90);
             
             // Rounding hole
-            tr(offT,offT) quartTorus(offT,diam);
+            tr(offT,offT) quarterTorus(offT,diam);
         }
     
         _screwHoles(dx,dy);
@@ -319,7 +289,7 @@ module roundHull(inlet,outlet,thk,diam) {
     tr(offT) _hullcyl(inlet-offT,diam,0,true);
     
     // Rounding
-    tr(offT,offT,zOff(diam)) _hullify(thk,diam/2+thk/2) quartTorus(offT,diam+thk);
+    tr(offT,offT,zOff(diam)) _hullify(thk,diam/2+thk/2) quarterTorus(offT,diam+thk);
 
     // outlet    
     tr(0,offT) _hullcyl(outlet-offT,diam,90,true);
@@ -332,7 +302,7 @@ module roundHole(inlet,outlet,thk,diam) {
         tr(offT-_EPSILON) _cylchamp(inlet-offT+_EPSILON,diam);
         
         // rounding
-        tr(offT,offT) quartTorus(offT,diam);
+        tr(offT,offT) quarterTorus(offT,diam);
 
         // outlet
         tr(0,offT-_EPSILON) _cylchamp(outlet-offT+_EPSILON,diam,-90);
