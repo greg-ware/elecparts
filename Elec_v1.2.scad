@@ -3,8 +3,9 @@
  +-------------------------------------------------------------------------
  * History
  * Date       Version Author      Description
- * 2019/02/11  v1     Ph.Gregoire Initial version
- * 2019/04/09  v1.1   Ph.Gregoire Multiple Straight and Round capabilities
+ * 2019/02/11 v1      Ph.Gregoire Initial version
+ * 2019/04/09 v1.1    Ph.Gregoire Multiple Straight and Round capabilities
+ * 2020/04/30 v1.2    Ph.Gregoire Add Stacked supports
  +-------------------------------------------------------------------------
  *
  *  This work is licensed under the 
@@ -171,9 +172,9 @@ function sigma0(arr,i) = ((i==0)?0:sigma(arr,i-1));
     diamSpacings contains an array of spacings followed by diameter
 */
 module multipleStraight(dx,diams,spacings=[],_eps=0) {
-    diams=(len(diams)==undef)?[diams]:diams;
+    diams=is_list(diams)?diams:[diams];
     diamsMax=len(diams)-1;
-    spacings=(len(spacings)!=undef)?spacings:((diamsMax<1)?[]:[for(i=[0:diamsMax-1]) spacings]);
+    spacings=is_list(spacings)?spacings:((diamsMax<1)?[]:[for(i=[0:diamsMax-1]) spacings]);
     
     // Offsets to position screw holes and rounding of base plate
     screwOff=screwDiam+screwHead;
@@ -310,11 +311,11 @@ module roundHole(inlet,outlet,thk,diam) {
 }
 
 module multipleRound(diams,spacingsX=[],spacingsY=[],_eps=0) {
-    diams=(len(diams)==undef)?[diams]:diams;
+    diams=is_list(diams)?diams:[diams];
     
     diamsMax=len(diams)-1;
-    spacingsX=(len(spacingsX)!=undef)?spacingsX:((diamsMax<1)?[]:[for(i=[0:diamsMax-1]) spacingsX]);
-    spacingsY=(len(spacingsY)!=undef)?((len(spacingsY)==0)?spacingsX:spacingsY):((diamsMax<1)?[]:[for(i=[0:diamsMax-1]) spacingsY]);
+    spacingsX=is_list(spacingsX)?spacingsX:((diamsMax<1)?[]:[for(i=[0:diamsMax-1]) spacingsX]);
+    spacingsY=is_list(spacingsY)?((len(spacingsY)==0)?spacingsX:spacingsY):((diamsMax<1)?[]:[for(i=[0:diamsMax-1]) spacingsY]);
     
     // Offsets to position screw holes and rounding of base plate
     screwOff=screwDiam+screwHead;
@@ -389,8 +390,7 @@ module _dispatch(diamsMax,spacingsX,spacingsY,iD) {
 
 /* Special setup with one straight and one round */
 module straightRound(diams,spacingsX=[],spacingsY=[],_eps=0) {
-//module multipleRound(diams,spacingsX=[],spacingsY=[],_eps=0) {
-    diams=(len(diams)==undef)?[diams]:diams;
+    diams=is_list(diams)?diams:[diams];
     
     // Offsets to position screw holes and rounding of base plate
     screwOff=screwDiam+screwHead;
