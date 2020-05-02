@@ -449,15 +449,14 @@ module multipleRound(diams,spacingsX=[],spacingsY=[],_eps=0) {
     
     xS=[for(iD=[0:diamsMax]) plateInnerBorder+sigma0(spacingsX,iD)];
     yS=[for(iD=[0:diamsMax]) plateInnerBorder+sigma0(spacingsY,iD)];
+        
+    plateRoudingRadius=plateOuterBorder+torusOuterDiam/2;
     difference() {
         union() {
             // rounded base plate
-            union() {
             intersection() {
                 roundedFlatBox(dx,dy,thk,rnd,center=true);
-                rot(0,0,180) tr(-dx/2,-dy/2) roundedRect(dx,dy,plateOuterBorder+torusOuterDiam/2,thk);
-            }
-            trcyl(-dx/2,-dy/2,0,plateOuterBorder+torusOuterDiam/2);
+                rot(0,0,180) tr(-dx/2,-dy/2) roundedRect(dx,dy,plateRoudingRadius,thk);
             }
             for(iD=[0:diamsMax]) {
                 // outer tube
@@ -482,15 +481,14 @@ module multipleRound(diams,spacingsX=[],spacingsY=[],_eps=0) {
 
             // Two outer holes
             for(s=[1,-1])
-            #tr(s*(dx/2-screwPos),-s*(dy/2-screwPos),-_EPSILON) _screwHole();
+            tr(s*(dx/2-screwPos),-s*(dy/2-screwPos),-_EPSILON) _screwHole();
             
             // Far outer hole
-            r=torusOuterDiam/2+thk*2+screwPos*2;
-            r2=r/sqrt(2);
-            
-            torx=(plateOuterBorder+torusOuterDiam/2)-dx/2;
-            tory=(plateOuterBorder+torusOuterDiam/2)-dy/2;
-            tr(torx-r2,tory-r2,-_EPSILON) _screwHole();
+            //center of plate at
+            cx=-dx/2+plateRoudingRadius;
+            cy=-dy/2+plateRoudingRadius;
+            rc=plateRoudingRadius-screwPos;
+            tr(cx-rc/sqrt(2),cy-rc/sqrt(2),-_EPSILON) _screwHole();
         }
     }
 }
