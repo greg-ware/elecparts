@@ -7,7 +7,7 @@
  * Date       Version Author      Description
  * 2019/02/11 v1      Ph.Gregoire Initial version
  * 2019/04/09 v1.1    Ph.Gregoire Multiple Straight and Round capabilities
- * 2020/04/30 v1.2    Ph.Gregoire Add Stacked supports
+ * 2020/04/30 v1.2    Ph.Gregoire Add Stacked supports, thickHull
  +-------------------------------------------------------------------------
  *
  *  This work is licensed under the 
@@ -36,7 +36,7 @@
     There are essentially two module to use as entry points:
    
     1. Straight fastening clamps:
-        `multipleStraight(width,diameters,spacings,[epsilon])`
+        `multipleStraight(width,diameters,spacings,thickHull=false,[epsilon])`
         Will place multiple rings of specified diameters at specified spacings
         For example, `multipleStraight(20,[16,20,16],[25,35])` will generate
         fastenings for 3 tubes of diameters 16, 20 and 16, spaced at 
@@ -50,7 +50,12 @@
         * a single-tube fastener can be obtained with the form
         `multipleStraight(width,diameter,_eps=epsilon)`
         * If the spacings are the same they can be specified with a single 
-        integer rather than an array, i.e.  `multipleStraight(width,diameters,spacing,[epsilon])`
+        integer rather than an array, i.e.  `multipleStraight(width,diameters,spacing,thickHull,[epsilon])`
+    1b. Stacked straight supports:
+        `multipleStackedStraight(dx,diams,spacings=[],spacingsZ=undef,_eps=0) `
+        Designed to add tubing over existing ones.
+        The first row has arches, the subsequent rows come on top, and a single thick hull is used arond all of them. 
+        The spacingsZ specifies the Z-distance between two rows. If left to undef, the max height of the row below is used. 
         
     2. Rounded corner fastenings:
         `multipleRound(diameters,spacingsX,spacingsT,[epsilon])`
@@ -92,9 +97,13 @@ screwHead=8;
 // Tolerance...
 _EPSILON=$preview?GET_EPSILON():0;
 
+_SHAFTMAX=100;  // arbitrary height of screw shaft
+/* Drill one screw hole */
 module _screwHole() {
     cyl_eps(screwDiam,thk);
     trcone(0,0,thk-(screwHead-screwDiam)/2,screwDiam,screwHead,(screwHead-screwDiam)/2+_EPSILON*2);
+    // Extend the screw shaft upwards
+    trcyl(0,0,thk,screwHead,_SHAFTMAX);
 }
 
 module _screwHoles(dx,dy) {
@@ -176,10 +185,10 @@ module repeatTr(offsets,i=0) {
     }
 }
 
-/* adjusted index */
+/* adjusted array indexing, negative indices return last index */
 function ix(arr,i)=(i<0)?(len(arr)-1):i;
 
-/* Adds items from an array */
+/* Adds items from an array, up to the */
 function sigma(arr,i=-1,step=1) = (len(arr)<=0)?0:(((arr[ix(arr,i)])==undef?0:arr[ix(arr,i)])+((ix(arr,i)<step)?0:sigma(arr,ix(arr,i)-step,step)));
 
 /* Add items from an array shifted by one element */
@@ -221,8 +230,16 @@ module _multipleStraightPart(partID,isOuter,dx,diams,spacings,thickHull,_eps) {
     plateInnerBorder=(diams[0]+_eps)/2+thk+screwOff;
     plateOuterBorder=(diams[diamsMax]+_eps)/2+thk+screwOff;
     
+    /* Compute length of base plate */
     dy=plateInnerBorder+sigma(spacings)+plateOuterBorder;
-    yS=[for(iD=[0:diamsMax]) plateInnerBorder+sigma0(spacings,iD)];
+    
+    /* Compute positions of tubes.
+       If thera are as many or more spacings as tubes, the first element 
+       is the offset of the first tube, otherwise of the second
+    */
+    yS=(len(spacings)<len(diams))?
+        [for(iD=[0:diamsMax]) plateInnerBorder+sigma0(spacings,iD)]:
+        [for(iD=[0:diamsMax]) plateInnerBorder+sigma(spacings,iD)];
         
     if(isOuter) {
         // support
@@ -266,7 +283,6 @@ module _multipleStraightPart(partID,isOuter,dx,diams,spacings,thickHull,_eps) {
                         rot(180,-90) tr(-champDepth+dx+_EPSILON+_EPSILON,dy_a[0],0)
                             prism(champDepth,ch/2,zOff(diam)+_EPSILON,dy_a[1]);
                     }
-                    
             }
         }            
     }
@@ -278,13 +294,12 @@ module trStacked(i,diams,spacingsZ) {
 
 /* Generate multiple parallel supports 
     diamSpacings contains an array of spacings followed by diameter
+    supportLevel defines which level is used as the base
+    If there are as many or more spacings as tubes, the first is taken as an offset
 */
-module multipleStackedStraight(dx,diams,spacings=[],spacingsZ=undef,_eps=0) {
+module multipleStackedStraight(dx,diams,spacings=[],spacingsZ=undef,supportLevel=1,_eps=0) {
     spacingsZ=is_list(spacingsZ)?spacingsZ:[spacingsZ];
-    
-    // which level to use support from
-    supportLevel=1;
-    
+        
     difference() {
         union() {
             // Support for selected level, not translated
@@ -396,7 +411,8 @@ module roundHull(inlet,outlet,thk,diam) {
     tr(0,offT) _hullcyl(outlet-offT,diam,90,true);
 }
 
-module roundHole(inlet,outlet,thk,diam) {
+/* Turning cylinder with champfers (to bore a hole */
+module turningHole(inlet,outlet,thk,diam) {
     trz(zOff(diam)) {
         offT=diam/2+2*thk;
         // inlet
@@ -436,9 +452,12 @@ module multipleRound(diams,spacingsX=[],spacingsY=[],_eps=0) {
     difference() {
         union() {
             // rounded base plate
+            union() {
             intersection() {
                 roundedFlatBox(dx,dy,thk,rnd,center=true);
                 rot(0,0,180) tr(-dx/2,-dy/2) roundedRect(dx,dy,plateOuterBorder+torusOuterDiam/2,thk);
+            }
+            trcyl(-dx/2,-dy/2,0,plateOuterBorder+torusOuterDiam/2);
             }
             for(iD=[0:diamsMax]) {
                 // outer tube
@@ -451,26 +470,27 @@ module multipleRound(diams,spacingsX=[],spacingsY=[],_eps=0) {
             for(iD=[0:diamsMax]) {
                 // inner tube hole
                 tr(dx/2-xS[iD],dy/2-yS[iD]) {
-                    roundHole(xS[iD],yS[iD],thk,diams[iD]+_eps);
+                    turningHole(xS[iD],yS[iD],thk,diams[iD]+_eps);
                 }
             }
             
             // Screw holes
-            //_screwHoles(dx,dy);
             screwPos=(screwDiam+screwHead)/2;
             
+            // Inner hole 
             tr(dx/2-screwPos,dy/2-screwPos,-_EPSILON) _screwHole();
-            tr(-(dx/2-screwPos),dy/2-screwPos,-_EPSILON) _screwHole();
-            tr(dx/2-screwPos,-(dy/2-screwPos),-_EPSILON) _screwHole();
+
+            // Two outer holes
+            for(s=[1,-1])
+            #tr(s*(dx/2-screwPos),-s*(dy/2-screwPos),-_EPSILON) _screwHole();
             
-            // 
+            // Far outer hole
             r=torusOuterDiam/2+thk*2+screwPos*2;
             r2=r/sqrt(2);
             
             torx=(plateOuterBorder+torusOuterDiam/2)-dx/2;
             tory=(plateOuterBorder+torusOuterDiam/2)-dy/2;
             tr(torx-r2,tory-r2,-_EPSILON) _screwHole();
-            //trcyl(torx,tory,0,r*2,100);
         }
     }
 }
@@ -528,7 +548,7 @@ module straightRound(diams,spacingsX=[],spacingsY=[],_eps=0) {
         union() {
             for(iD=[0:diamsMax]) _dispatch(diamsMax,spacingsX,spacingsY,iD) {
                 tr(dx/2-xS[iD],dy/2-yS[iD]) {
-                    roundHole(xS[iD],yS[iD],thk,diams[iD]+_eps);
+                    turningHole(xS[iD],yS[iD],thk,diams[iD]+_eps);
                 }
                 cube();
                 diam=diams[iD]+_eps;
@@ -583,6 +603,8 @@ $fn=GET_FN_CYL();
 
 /* Generate a rounded support */
 //roundSupport(60,60,20+_EPSILON*2);
+//roundSupport(50,50,16);
+//roundSupport(46,46,16+.2);
 
 /* Generate supports for 4 tubes of diams 16,20,20,20 spaced by 25mm */
 //tr(40) multipleStraight(20,[20,20,20,16],25,false,_EPSILON*3);
@@ -592,7 +614,15 @@ $fn=GET_FN_CYL();
 /* Same but with thick hull */
 //multipleStraight(20,[20,20,20,16],[45,45,20],true,_EPSILON*3);
 
-multipleStackedStraight(20,[[16+2,20+2],[20+1,20+1,16+1]],[[40],[25,25]],[],_EPSILON*3);
+//multipleStraight(30,[20+.5,16+.5],[22],true,_EPSILON*3);
+
+/* Stacked tubes straight support to add 1x16 and 2x20 on top of existing 16 and 20 spaced by 4cm */
+//multipleStackedStraight(20,[[16+2,20+2],[20+1,20+1,16+1]],[[40],[25,25]],[],1,_EPSILON*3);
+//multipleStackedStraight(20,[[16+2,20+2],[20+.5,20+.5,16+.5]],[[40],[25,25]],[],1,_EPSILON*3);
+//multipleStackedStraight(20,[[16+2,20+2],[20+.5,20+.5,16+.5]],[[50],[25,25]],[25],1,_EPSILON*3);
+//multipleStackedStraight(20,[[16+2,16+2,20+2],[20+.5,20+.5,16+.5]],[[30,25],[25,25]],[25],0,_EPSILON*3);
+
+//multipleStackedStraight(20,[[20+1,20+1,16+1],[20+.5]],[[25,23],[13]],[20],0,_EPSILON*3);
 
 /* Rounded support */
 //multipleRound([20,20,20,16],[45,45,20],[25,25,25],_EPSILON*2);
@@ -600,6 +630,7 @@ multipleStackedStraight(20,[[16+2,20+2],[20+1,20+1,16+1]],[[40],[25,25]],[],_EPS
 
 /* Round one input two outputs */
 //multipleRound([20,16,20],[25,30],[30,40],_eps=_EPSILON*2);
+multipleRound([20+.5,16+.5],[20],[20],_eps=_EPSILON*2);
 
 /* Single round corner, diameter 20 */
 //multipleRound(20,_eps=_EPSILON*2);
