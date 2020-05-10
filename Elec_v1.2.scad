@@ -86,42 +86,62 @@ champDepth=2;
 // Rounding radius
 rnd=2;
 
-
-// squashing width
-squash=thk;
+// spreading width, this is the factor by which elements hulls are extended
+squash=2; //thk;
 
 // Screw shaft and head diameters
 screwDiam=4.5;
-screwHead=8;
+screwHead=8.4;
+screwSeatHeight=(screwHead-screwDiam)/2;
+screwStyleFlat=true;
 
 // Tolerance...
 _EPSILON=$preview?GET_EPSILON():0;
 
 _SHAFTMAX=100;  // arbitrary height of screw shaft
+
+/* =================================================================== */
+/* Utility modules and functions                                       */
+/*                                                                     */
+/* =================================================================== */
+
+/* Determine distance of screw from edge */
+function screwDistFromEdge(screwDiam,screwHead) = (screwDiam+screwHead)/2;
+
+function _plateInnerBorder(diams,screwOff,_eps)=(diams[0]+_eps)/2+squash+screwOff;
+function _plateOuterBorder(diams,screwOff,_eps)=(diams[len(diams)-1]+_eps)/2+squash+screwOff;
+
 /* Drill one screw hole */
-module _screwHole() {
-    cyl_eps(screwDiam,thk);
-    trcone(0,0,thk-(screwHead-screwDiam)/2,screwDiam,screwHead,(screwHead-screwDiam)/2+_EPSILON*2);
+module _screwHole(diam=screwDiam,head=screwHead,seat=screwSeatHeight,style=screwStyleFlat) {
+    cyl_eps(diam,thk);
+    if(style)
+        trcyl(0,0,thk-seat,head,seat+_EPSILON*2);
+    else
+        trcone(0,0,thk-seat,diam,head,seat+_EPSILON*2);
+    
     // Extend the screw shaft upwards
-    trcyl(0,0,thk,screwHead,_SHAFTMAX);
+    trcyl(0,0,thk,head,_SHAFTMAX);
 }
 
-module _screwHoles(dx,dy) {
+/* Drill screw Holes along X axis. One or two holes depending if there is enough length */
+module _screwHoles(dx,dy,diam=screwDiam,head=screwHead,seat=screwSeatHeight,style=screwStyleFlat) {
     // Screw holes and seats
-    screwOff=screwDiam+screwHead;
+    offset=screwDistFromEdge(diam,head)*2;
     
     trz(-_EPSILON) 
-    if(dx-screwOff<screwHead) {
-        // One hole along x
-        for(s=[1,-1]) tr(0,s*(dy-screwOff)/2) _screwHole();
-    } else cornersPos(dx-screwOff,dy-screwOff) _screwHole();
+    if(dx-offset<head) {
+        // Two hole along x axis
+        for(s=[1,-1]) tr(0,s*(dy-offset)/2) _screwHole();
+    } else {
+        // Only one hole for a corner
+        cornersPos(dx-offset,dy-offset) _screwHole();
+    }
 }
 
 function bw(diam)=diam+thk+2*squash;
 function zOff(diam)=diam/2+thk/2;
 
-/* Cylinder with base hulled
-*/
+/* Cylinder with base hulled */
 module _hullcyl(length,diam,rotz=0,halfTapper=false) {
     rot(0,0,rotz) _hull() {
         _hullcylPart(1,length,diam,halfTapper);
@@ -164,14 +184,24 @@ module _hullify(h,dz) {
     }
 }
 
+/* Create either a plain union or a hull of the children */
+module hullOrUnion(doHull) {
+    if(doHull) _hull() children();
+    else union() children();
+}
+
 /* Champfered cylinder */
-module _cylchamp(length,diam,rotz=0) {
+module _cylchamp(length,diam,rotz=0,both=false) {
     rot(rotz,90) {
         // Inner tube
         cyl_eps(diam,length-champDepth+_EPSILON);
         
         // Champfer
-        trcone(0,0,length-champDepth,diam,diam+champDepth/2,thk+_EPSILON);
+        trcone(0,0,length-champDepth,diam,diam+champDepth/2,champDepth+_EPSILON);
+        
+        if(both) {
+            trcone(0,0,-_EPSILON,diam+champDepth/2,diam,champDepth+_EPSILON);
+        }
     }
 }
 
@@ -194,7 +224,8 @@ function sigma(arr,i=-1,step=1) = (len(arr)<=0)?0:(((arr[ix(arr,i)])==undef?0:ar
 /* Add items from an array shifted by one element */
 function sigma0(arr,i) = ((i==0)?0:sigma(arr,i-1));
 
-/* Generate multiple parallel supports 
+//multipleStraight(20,[20+.5,20+.5,16+.5],[24,22],false,_EPSILON*3);
+/* Generate multiple parallel supports
     diamSpacings contains an array of spacings followed by diameter
 */
 module multipleStraight(dx,diams,spacings=[],thickHull=false,_eps=0) {
@@ -203,17 +234,11 @@ module multipleStraight(dx,diams,spacings=[],thickHull=false,_eps=0) {
         for(p=[1:2]) _multipleStraightPart(p,false,dx,diams,spacings,thickHull,_eps);
     }
 }
-/* Create either a plain union or a hull of the children
-*/
-module hullOrUnion(doHull) {
-    if(doHull) _hull() children();
-    else union() children();
-}
 
 /* Generates the parts for multiple supports
     partID 1: support (base and screw holes)
     partID 2: tubes
-    partID 3: tubes with no bottom (inner tubes only)
+    partID 3: tubes with bridge (inner tubes only)
 
     partID 11: only hullbase no tube
     partID 12: only tubes no hull
@@ -224,11 +249,11 @@ module _multipleStraightPart(partID,isOuter,dx,diams,spacings,thickHull,_eps) {
     spacings=is_list(spacings)?spacings:((diamsMax<1)?[]:[for(i=[0:diamsMax-1]) spacings]);
     
     // Offsets to position screw holes and rounding of base plate
-    screwOff=screwDiam+screwHead;
+    screwOff=screwDistFromEdge(screwDiam,screwHead)*2;
     
     // Inner and outer border plate width
-    plateInnerBorder=(diams[0]+_eps)/2+thk+screwOff;
-    plateOuterBorder=(diams[diamsMax]+_eps)/2+thk+screwOff;
+    plateInnerBorder=_plateInnerBorder(diams,screwOff,_eps);
+    plateOuterBorder=_plateOuterBorder(diams,screwOff,_eps);
     
     /* Compute length of base plate */
     dy=plateInnerBorder+sigma(spacings)+plateOuterBorder;
@@ -266,23 +291,19 @@ module _multipleStraightPart(partID,isOuter,dx,diams,spacings,thickHull,_eps) {
         for(iD=[0:diamsMax]) {
             diam=diams[iD]+_eps;
             trrot(-_EPSILON-dx/2,yS[iD],zOff(diam),0,90,0) {
-                // Inner tube
-                cyl_eps(diam,dx);
-                if(partID==3)
-                    trcube_eps(0,-diam/2,0,zOff(diam)+_EPSILON,diam,dx+_EPSILON);
-                
-                // Champfers
-                ch=champDepth/2;
-                cylinder(d1=diam+ch,d2=diam,champDepth+_EPSILON);
-                trcone(0,0,dx-champDepth+2*_EPSILON,diam,diam+ch,champDepth+_EPSILON);
+                straightHole(diam,dx);
 
-                if(partID==3)
+                if(partID==3) {
+                    // Bridge type of tube, remove qnd champfer bottom part
+                    trcube_eps(0,-diam/2,0,zOff(diam)+_EPSILON,diam,dx+_EPSILON);
+                    
                     for(dy_a=[[-diam/2-ch/2,180],[diam/2,90]]) {
                         rot(0,90) tr(-champDepth,dy_a[0],0)
                             prism(champDepth,ch/2,zOff(diam)+_EPSILON,dy_a[1]);
                         rot(180,-90) tr(-champDepth+dx+_EPSILON+_EPSILON,dy_a[0],0)
                             prism(champDepth,ch/2,zOff(diam)+_EPSILON,dy_a[1]);
                     }
+                }
             }
         }            
     }
@@ -360,12 +381,11 @@ module cornerSupport(dx,dy,diam) difference() {
     _screwHoles(dx,dy);
 }
 
-/* Support with a rounded corner shape
-*/
+/* Support with a rounded corner shape */
 module roundSupport(dx,dy,diam) {
     // Offset of the torus (torus radius)
     offT=diam/2+2*thk;
-    screwOff=screwDiam+screwHead;
+    screwOff=screwDistFromEdge(screwDiam,screwHead)*2;
     rOff=dx/2-screwOff;
     dOff=(dx-screwOff)*2;
     difference() {
@@ -398,7 +418,8 @@ module roundSupport(dx,dy,diam) {
     }
 }
 
-module roundHull(inlet,outlet,thk,diam) {
+/* Generate a hull around a turning pipe */
+module turningPipeHull(inlet,outlet,thk,diam) {
     offT=diam/2+2*thk;
     
     // inlet
@@ -409,6 +430,17 @@ module roundHull(inlet,outlet,thk,diam) {
 
     // outlet    
     tr(0,offT) _hullcyl(outlet-offT,diam,90,true);
+}
+/* Straight hole with champfers at both ends */
+module straightHole(diam,length,both=true) {
+    // Inner tube
+    cyl_eps(diam,length);
+                
+    // Champfers
+    cylinder(d1=diam+champDepth/2,d2=diam,champDepth+_EPSILON);
+    if(both) {
+        trcone(0,0,length-champDepth+2*_EPSILON,diam,diam+champDepth/2,champDepth+_EPSILON);
+    }
 }
 
 /* Turning cylinder with champfers (to bore a hole */
@@ -434,10 +466,10 @@ module multipleRound(diams,spacingsX=[],spacingsY=[],_eps=0) {
     spacingsY=is_list(spacingsY)?((len(spacingsY)==0)?spacingsX:spacingsY):((diamsMax<1)?[]:[for(i=[0:diamsMax-1]) spacingsY]);
     
     // Offsets to position screw holes and rounding of base plate
-    screwOff=screwDiam+screwHead;
+    screwOff=screwDistFromEdge(screwDiam,screwHead)*2;
     
-    plateInnerBorder=(diams[0]+_eps)/2+thk+screwOff;
-    plateOuterBorder=(diams[diamsMax]+_eps)/2+thk+screwOff;
+    plateInnerBorder=_plateInnerBorder(diams,screwOff,_eps);
+    plateOuterBorder=_plateOuterBorder(diams,screwOff,_eps);
     
     dx=plateInnerBorder+sigma(spacingsX)+plateOuterBorder;
     dy=plateInnerBorder+sigma(spacingsY)+plateOuterBorder;
@@ -445,7 +477,6 @@ module multipleRound(diams,spacingsX=[],spacingsY=[],_eps=0) {
     rOff=dx/2-screwOff;
     dOff=(dx-screwOff)*2;
     torusOuterDiam=3*diams[diamsMax]/2+thk+squash;
-    echo("Size: dx=",dx," dy=",dy);
     
     xS=[for(iD=[0:diamsMax]) plateInnerBorder+sigma0(spacingsX,iD)];
     yS=[for(iD=[0:diamsMax]) plateInnerBorder+sigma0(spacingsY,iD)];
@@ -458,10 +489,10 @@ module multipleRound(diams,spacingsX=[],spacingsY=[],_eps=0) {
                 roundedFlatBox(dx,dy,thk,rnd,center=true);
                 rot(0,0,180) tr(-dx/2,-dy/2) roundedRect(dx,dy,plateRoudingRadius,thk);
             }
-            for(iD=[0:diamsMax]) {
+                for(iD=[0:diamsMax]) {
                 // outer tube
                 tr(dx/2-xS[iD],dy/2-yS[iD]) {
-                    roundHull(xS[iD],yS[iD],thk,diams[iD]+_eps);
+                    turningPipeHull(xS[iD],yS[iD],thk,diams[iD]+_eps);
                 }
             }
         }
@@ -473,8 +504,8 @@ module multipleRound(diams,spacingsX=[],spacingsY=[],_eps=0) {
                 }
             }
             
-            // Screw holes
-            screwPos=(screwDiam+screwHead)/2;
+            /* Screw holes */
+            screwPos=screwDistFromEdge(screwDiam,screwHead);
             
             // Inner hole 
             tr(dx/2-screwPos,dy/2-screwPos,-_EPSILON) _screwHole();
@@ -484,98 +515,102 @@ module multipleRound(diams,spacingsX=[],spacingsY=[],_eps=0) {
             tr(s*(dx/2-screwPos),-s*(dy/2-screwPos),-_EPSILON) _screwHole();
             
             // Far outer hole
-            //center of plate at
-            cx=-dx/2+plateRoudingRadius;
-            cy=-dy/2+plateRoudingRadius;
-            rc=plateRoudingRadius-screwPos;
-            tr(cx-rc/sqrt(2),cy-rc/sqrt(2),-_EPSILON) _screwHole();
+            _roundPlateOuterHole(plateRoudingRadius,dx,dy,screwPos) _screwHole();
         }
     }
 }
 
-module _dispatch(diamsMax,spacingsX,spacingsY,iD) {
-    if(iD>0 && (spacingsX[iD-1]==undef || spacingsY[iD-1]==undef)) {
+/* Round plate far outer hole */
+module _roundPlateOuterHole(plateRoudingRadius,dx,dy,screwPos) {
+    // Compute center qnd radius of plate's outer rounding circle
+    cx=-dx/2+plateRoudingRadius;
+    cy=-dy/2+plateRoudingRadius;
+    rc=plateRoudingRadius-screwPos;
+    tr(cx-rc/sqrt(2),cy-rc/sqrt(2),-_EPSILON) children();
+}
+
+/* Draw one the 3 children depending on ID. 0 for round, & straight along X, 2 along Y */
+module _drawSubParts(xS,yS,spacingsX,spacingsY,iD,numberOfTurning) {
+    tr(-xS[iD],-yS[iD])
+    if(iD>=numberOfTurning && (spacingsX[iD-1]==undef || spacingsY[iD-1]==undef)) {
         // Use a straight connector
         if(spacingsX[iD-1]==undef) {
+            // Along X
             children(1);
         } else {
+            // Along Y
             children(2);
         }
     } else {
+        // Round
         children(0);
     }
 }
 
-/* Special setup with one straight and one round */
-module straightRound(diams,spacingsX=[],spacingsY=[],_eps=0) {
-    diams=is_list(diams)?diams:[diams];
+/* Special setup with several straight and round */
+module straightRound(diamsRnd,diamsStr,spacingsX=[],spacingsY=[],_eps=0) {
+    diamsStr=is_list(diamsStr)?diamsStr:[diamsStr];
+    diamsStrMax=len(diamsStr)-1;
     
-    // Offsets to position screw holes and rounding of base plate
-    screwOff=screwDiam+screwHead;
+    diamsRnd=is_list(diamsRnd)?diamsRnd:[diamsStr];
+    diamsRndMax=len(diamsRnd)-1;
+    
+    diams=concat(diamsRnd,diamsStr);
     diamsMax=len(diams)-1;
     
-    plateInnerBorder=(diams[0]+_eps)/2+thk+screwOff;
-    plateOuterBorder=(diams[diamsMax]+_eps)/2+thk+screwOff;
+    // Offsets to position screw holes and rounding of base plate
+    screwOff=screwDistFromEdge(screwDiam,screwHead)*2;
+    
+    plateInnerBorder=_plateInnerBorder(diams,screwOff,_eps);
+    plateOuterBorder=_plateOuterBorder(diams,screwOff,_eps);
     
     dx=plateInnerBorder+sigma(spacingsX)+plateOuterBorder;
     dy=plateInnerBorder+sigma(spacingsY)+plateOuterBorder;
        
     rOff=dx/2-screwOff;
     dOff=(dx-screwOff)*2;
-    torusOuterDiam=3*diams[diamsMax]/2+thk+squash;
-    echo("Size: dx=",dx," dy=",dy);
     
     xS=[for(iD=[0:diamsMax]) plateInnerBorder+sigma0(spacingsX,iD)];
-    yS=[for(iD=[0:diamsMax]) plateInnerBorder+sigma0(spacingsY,iD)];
+    yS=[for(iD=[0:diamsMax]) ((iD>=len(diamsRnd))?0:plateInnerBorder+sigma0(spacingsY,iD))];
     
     difference() {
         union() {
             // rounded base plate
-            intersection() {
-                roundedFlatBox(dx,dy,thk,rnd,center=true);
-                //rot(0,0,180) tr(-dx/2,-dy/2) roundedRect(dx,dy,plateOuterBorder+torusOuterDiam/2,thk);
-            }
-            for(iD=[0:diamsMax]) _dispatch(diamsMax,spacingsX,spacingsY,iD) {
-                tr(dx/2-xS[iD],dy/2-yS[iD]) {
-                    roundHull(xS[iD],yS[iD],thk,diams[iD]+_eps);
-                }
-                tr(-xS[iD],dy/2-yS[iD]) _hullcyl(dx,diams[iD]+_eps);
-                trrot(dx/2-xS[iD],-yS[iD],0,0,0,90) _hullcyl(dy,diams[iD]+_eps);
+            roundedFlatBox(dx,dy,thk,rnd,center=true);
+
+            // Draw turning or straight tubes
+            for(iD=[0:diamsMax]) _drawSubParts(xS,yS,spacingsX,spacingsY,iD,len(diamsRnd)) {
+                // turning tube
+                tr(dx/2,dy/2) turningPipeHull(xS[iD],yS[iD],thk,diams[iD]+_eps);
+                
+                // straight tube along X
+                tr(0,dy/2) _hullcyl(dx,diams[iD]+_eps);
+                
+                // straight tube along Y
+                trrot(dx/2,-dy/2,0,0,0,90) _hullcyl(dy,diams[iD]+_eps);
             }            
         }
         union() {
-            for(iD=[0:diamsMax]) _dispatch(diamsMax,spacingsX,spacingsY,iD) {
-                tr(dx/2-xS[iD],dy/2-yS[iD]) {
-                    turningHole(xS[iD],yS[iD],thk,diams[iD]+_eps);
-                }
-                cube();
-                diam=diams[iD]+_eps;
-                trrot(dx/2-xS[iD],-yS[iD],zOff(diam),0,90,90) {
-                    // Inner tube
-                    cyl_eps(diam,dy);
-                    
-                    // Champfers
-                    #cylinder(d1=diam+champDepth/2,d2=diam,champDepth+_EPSILON);
-                    #trcone(0,0,dy-champDepth+2*_EPSILON,diam,diam+champDepth/2,champDepth+_EPSILON);
+            // Collection of tubes
+            for(iD=[0:diamsMax]) _drawSubParts(xS,yS,spacingsX,spacingsY,iD,len(diamsRnd)) {
+                 // turning tube
+                tr(dx/2,dy/2) turningHole(xS[iD],yS[iD],thk,diams[iD]+_eps);
+
+                // straight hole along X
+                tr(0,dy/2) straightHole(diams[iD]+_eps,dx);
+
+                // straight hole along Y with champfers on both ends
+                trrot(dx/2,-dy/2,zOff(diams[iD]+_eps),0,90,90) {
+                    straightHole(diams[iD]+_eps,dy);
                 }
             }
             
             // Screw holes
-            //_screwHoles(dx,dy);
-            screwPos=(screwDiam+screwHead)/2;
+            screwPos=screwDistFromEdge(screwDiam,screwHead);
             
-            tr(dx/2-screwPos,dy/2-screwPos,-_EPSILON) _screwHole();
-            tr(-(dx/2-screwPos),dy/2-screwPos,-_EPSILON) _screwHole();
-            tr(dx/2-screwPos,-(dy/2-screwPos),-_EPSILON) _screwHole();
-            
-            // 
-            r=torusOuterDiam/2+thk*2+screwPos*2;
-            r2=r/sqrt(2);
-            
-            torx=(plateOuterBorder+torusOuterDiam/2)-dx/2;
-            tory=(plateOuterBorder+torusOuterDiam/2)-dy/2;
-            tr(torx-r2,tory-r2,-_EPSILON) _screwHole();
-            //trcyl(torx,tory,0,r*2,100);
+            for(xH=[dx/2-screwPos,-(dx/2-screwPos)])
+                for(yH=[dy/2-screwPos,-(dy/2-screwPos)]) 
+                    tr(xH,yH,-_EPSILON) _screwHole();
         }
     }
 }
@@ -613,6 +648,7 @@ $fn=GET_FN_CYL();
 //multipleStraight(20,[20,20,20,16],[45,45,20],true,_EPSILON*3);
 
 //multipleStraight(30,[20+.5,16+.5],[22],true,_EPSILON*3);
+//multipleStraight(20,[20+.5,20+.5,16+.5],[24,22],false,_EPSILON*3);
 
 /* Stacked tubes straight support to add 1x16 and 2x20 on top of existing 16 and 20 spaced by 4cm */
 //multipleStackedStraight(20,[[16+2,20+2],[20+1,20+1,16+1]],[[40],[25,25]],[],1,_EPSILON*3);
@@ -622,21 +658,27 @@ $fn=GET_FN_CYL();
 
 //multipleStackedStraight(20,[[20+1,20+1,16+1],[20+.5]],[[25,23],[13]],[20],0,_EPSILON*3);
 
-/* Rounded support */
+/* Simple single round corner, diameter 20 */
+//multipleRound(20+.5,_eps=_EPSILON*2);
+
+/* Multiple rounded corner supports */
+//multipleRound([20+.5,16+.5],[22],[20],_eps=_EPSILON*2);
+//multipleRound([16+.5,20+.5],[22],[20],_eps=_EPSILON*2);
+
+/* Quadruple rounded corner supports 20-20-20-16 */
 //multipleRound([20,20,20,16],[45,45,20],[25,25,25],_EPSILON*2);
-//multipleRound(20,_eps=_EPSILON*2);
 
-/* Round one input two outputs */
+/* Multiple rounded tubes 20-16-20 */
 //multipleRound([20,16,20],[25,30],[30,40],_eps=_EPSILON*2);
-multipleRound([20+.5,16+.5],[20],[20],_eps=_EPSILON*2);
 
-/* Single round corner, diameter 20 */
-//multipleRound(20,_eps=_EPSILON*2);
+/* Merging tubes of different sizes */
+//multipleRound([16+.5,20+.5],22,0,_eps=_EPSILON*2);
 
-/* Merging tubes */
-//multipleRound([20,20],30,0,_eps=_EPSILON*2);
-
-/* Complex merging tubes */
+/* Complex merging tubes, two 20 inputs merging into two 20 outputs */
 //multipleRound([20,20,20],[ 30,0] ,[0,25] ,_eps=_EPSILON*2);
 
-//straightRound([20,20],[25],[undef],_eps=_EPSILON*2);
+/* One rounded, one straight */
+//straightRound([20],[20],[23],[undef],_eps=_EPSILON*2);
+
+/* Two straight, two rounded */
+straightRound([20+.3,20+.3],[20+.3,16+.2],[23,23,20],[23],_eps=_EPSILON*2);
