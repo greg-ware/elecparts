@@ -27,12 +27,11 @@
 $_SUPPORT_THK=0.2;
 
 // Cylinders $fn default
-$_FN_CYL=$preview?12:32;
+$_FN_CYL=$preview?12:$fn;
 function GET_FN_CYL()=$_FN_CYL;
 
 // Epsilon
-$_EPSILON=0.2;
-//function GET_EPSILON()=$preview?$_EPSILON:0;
+$_EPSILON=$preview?0.2:0;
 function GET_EPSILON()=$_EPSILON;
 
 /* Simple translation */
@@ -41,7 +40,12 @@ module tr(dx,dy=0,dz=0) {
 }
 
 /* Z-translation */
+module trZ(dz) {
+    translate([0,0,dz]) children();
+}
+
 module trz(dz) {
+    echo("Deprecated trz(), use trZ(); dz=",dz)
     translate([0,0,dz]) children();
 }
 
@@ -53,6 +57,11 @@ module rot(ax=90,ay=0,az=0) {
 /* Simple rotation */
 module rotY(ay=90) {
     rotate([0,ay,0]) children();
+}
+
+/* Simple rotation */
+module rotZ(az=90) {
+    rotate([0,0,az]) children();
 }
 
 /* Translate and rotate children */
@@ -71,42 +80,42 @@ module trcube_eps(tx,ty,tz,dx,dy,dz) {
 }
 
 /* translated cylinder */
-module trcyl(tx,ty,tz,d,h,center=false,fn=$_FN_CYL) {
+module trcyl(tx,ty,tz,d,h,center=false,fn=GET_FN_CYL()) {
 	translate([tx,ty,tz]) cylinder(d=d,h=h,center=center,$fn=fn);
 }
 
 /* translated cone */
-module trcone(tx,ty,tz,d1,d2,h,center=false,fn=$_FN_CYL) {
+module trcone(tx,ty,tz,d1,d2,h,center=false,fn=GET_FN_CYL()) {
 	translate([tx,ty,tz]) cylinder(d1=d1,d2=d2,h=h,center=center,$fn=fn);
 }
 
 /* cylinder with epsilon along Z axis */
-module cyl_eps(d,h,center=false,fn=$_FN_CYL) {
+module cyl_eps(d,h,center=false,fn=GET_FN_CYL()) {
     cylinder(d=d,h=h+2*$_EPSILON,center=center,$fn=fn);
 }
 
 /* translated cylinder with epsilon along height (Z) */
-module trcyl_eps(tx,ty,tz,d,h,center=false,fn=$_FN_CYL) {
+module trcyl_eps(tx,ty,tz,d,h,center=false,fn=GET_FN_CYL()) {
     translate([tx,ty,tz-$_EPSILON]) cyl_eps(d,h,center=center,fn=fn);
 }
 
-module trrotcyl(tx,ty,tz,ax,ay,az,d,h,center=false,fn=$_FN_CYL) {
+module trrotcyl(tx,ty,tz,ax,ay,az,d,h,center=false,fn=GET_FN_CYL()) {
 	trrot(tx,ty,tz,ax,ay,az) cylinder(d=d,h=h,center=center,$fn=fn);
 }
 
-module tube(dint,dout,h,center,fn=$_FN_CYL) {
+module tube(dint,dout,h,center,fn=GET_FN_CYL()) {
     difference() {
         cylinder(d=dout,h=h,center=center,$fn=fn);
         cylinder(d=dint,h=h,center=center,$fn=fn);
     }
 }
 
-module trrottube(tx,ty,tz,ax,ay,az,dout,dint,h,center=false,fn=$_FN_CYL) {
+module trrottube(tx,ty,tz,ax,ay,az,dout,dint,h,center=false,fn=GET_FN_CYL()) {
 	trrot(tx,ty,tz,ax,ay,az) tube(dout=dout,dint=dint,h=h,center=center,$fn=fn);
 }
 
 /* translated and rotated cylinder with epsilon along height (Z) */
-module trrotcyl_eps(tx,ty,tz,ax,ay,az,d,h,center=false,fn=$_FN_CYL) {
+module trrotcyl_eps(tx,ty,tz,ax,ay,az,d,h,center=false,fn=GET_FN_CYL()) {
     trrot(tx,ty,tz,ax,ay,az) translate([0,0,-$_EPSILON]) cylinder(d=d,h=h+2*$_EPSILON,center=center,$fn=fn);
 }
 
@@ -245,7 +254,7 @@ module quarterCone(r1,r2,h) {
 
 module quarterCyl(r,h) {
     intersection() {
-        cylinder(r=r,h=h,$fn=$_FN_CYL);
+        cylinder(r=r,h=h,$fn=GET_FN_CYL());
         cube([r,r,h]);
     }
 }
@@ -329,7 +338,7 @@ module roundedRect(dx,dy,r,h) {
 test();
 
 module test() {
-    $fn=$_FN_CYL;
+    $fn=GET_FN_CYL();
     
     //prism(30,20,10,270);
     //quarterCyl(5,10);

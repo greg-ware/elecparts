@@ -75,7 +75,15 @@
         * Tubes always turn right, for the opposite, apply a mirror operation
 */
 
+
+/* Set details accuracy */
+$fn=$preview?GET_FN_CYL():64;
+
+// Tolerance...
+_EPSILON=$preview?GET_EPSILON():0;
+
 use <phgUtils_v2.scad>
+echo("Generating with $fn=",$fn," _EPSILON=",_EPSILON);
 
 // Thickness
 thk=5;
@@ -87,16 +95,13 @@ champDepth=2;
 rnd=2;
 
 // spreading width, this is the factor by which elements hulls are extended
-squash=2; //thk;
+squash=5; //thk;
 
 // Screw shaft and head diameters
 screwDiam=4.5;
 screwHead=8.4;
 screwSeatHeight=(screwHead-screwDiam)/2;
 screwStyleFlat=true;
-
-// Tolerance...
-_EPSILON=$preview?GET_EPSILON():0;
 
 _SHAFTMAX=100;  // arbitrary height of screw shaft
 
@@ -106,10 +111,11 @@ _SHAFTMAX=100;  // arbitrary height of screw shaft
 /* =================================================================== */
 
 /* Determine distance of screw from edge */
-function screwDistFromEdge(screwDiam,screwHead) = (screwDiam+screwHead)/2;
+function _screwDistFromEdge(sD=screwDiam,sH=screwHead) = (sD+sH)/2;
 
-function _plateInnerBorder(diams,screwOff,_eps)=(diams[0]+_eps)/2+squash+screwOff;
-function _plateOuterBorder(diams,screwOff,_eps)=(diams[len(diams)-1]+_eps)/2+squash+screwOff;
+function _plateBorder(diam,screwOff=2*_screwDistFromEdge(),_eps=_EPSILON)=(diam+_eps)/2+squash+screwOff;
+function _plateInnerBorder(diams,screwOff,_eps=_EPSILON)=_plateBorder(diams[0],screwOff,_eps);
+function _plateOuterBorder(diams,screwOff,_eps=_EPSILON)=_plateBorder(diams[len(diams)-1],screwOff,_eps);
 
 /* Drill one screw hole */
 module _screwHole(diam=screwDiam,head=screwHead,seat=screwSeatHeight,style=screwStyleFlat) {
@@ -123,18 +129,40 @@ module _screwHole(diam=screwDiam,head=screwHead,seat=screwSeatHeight,style=screw
     trcyl(0,0,thk,head,_SHAFTMAX);
 }
 
+module _trScrewHole(tx,ty,tz=0,diam=screwDiam,head=screwHead,seat=screwSeatHeight,style=screwStyleFlat) {
+    tr(tx,ty,tz) _screwHole(diam,head,seat,style);
+}
+
+module _twoXScrewHoles(dx,dy,offset=undef,diam=screwDiam,head=screwHead,seat=screwSeatHeight,style=screwStyleFlat) {
+    
+    off=is_undef(offset)?_screwDistFromEdge(diam,head)*2:offset;
+    
+    // Two holes along x axis
+    dxOff=(dx==0)?0:(dx>0)?(dx-off)/2:(dx+off)/2;
+    for(s=[1,-1]) _trScrewHole(dxOff,s*(dy-off)/2,0,diam,head,seat,style);
+}
+
+module _twoYScrewHoles(dx,dy,offset=undef,diam=screwDiam,head=screwHead,seat=screwSeatHeight,style=screwStyleFlat) {
+    
+    off=is_undef(offset)?_screwDistFromEdge(diam,head)*2:offset;
+    
+    // Two holes along x axis
+    dyOff=(dy==0)?0:(dy>0)?(dy-off)/2:(dy+off)/2;
+    for(s=[1,-1]) _trScrewHole(s*(dx-off)/2,dyOff,0,diam,head,seat,style);
+}
+
 /* Drill screw Holes along X axis. One or two holes depending if there is enough length */
 module _screwHoles(dx,dy,diam=screwDiam,head=screwHead,seat=screwSeatHeight,style=screwStyleFlat) {
     // Screw holes and seats
-    offset=screwDistFromEdge(diam,head)*2;
+    offset=_screwDistFromEdge(diam,head)*2;
     
-    trz(-_EPSILON) 
+    trZ(-_EPSILON) 
     if(dx-offset<head) {
-        // Two hole along x axis
-        for(s=[1,-1]) tr(0,s*(dy-offset)/2) _screwHole();
+        // Two holes along x axis
+        _twoXScrewHoles(0,dy,offset,diam,head,seat,style);
     } else {
-        // Only one hole for a corner
-        cornersPos(dx-offset,dy-offset) _screwHole();
+        // one hole per corner
+        cornersPos(dx-offset,dy-offset) _screwHole(diam,head,seat,style);
     }
 }
 
@@ -176,7 +204,7 @@ module _hull() {
 
 module _hullify(h,dz) {
     _hull() {
-        trz(-dz)
+        trZ(-dz)
         linear_extrude(height=h) 
         offset(r=squash)
         projection() children();
@@ -224,11 +252,13 @@ function sigma(arr,i=-1,step=1) = (len(arr)<=0)?0:(((arr[ix(arr,i)])==undef?0:ar
 /* Add items from an array shifted by one element */
 function sigma0(arr,i) = ((i==0)?0:sigma(arr,i-1));
 
+//translate([-50,0,0])
 //multipleStraight(20,[20+.5,20+.5,16+.5],[24,22],false,_EPSILON*3);
+
 /* Generate multiple parallel supports
     diamSpacings contains an array of spacings followed by diameter
 */
-module multipleStraight(dx,diams,spacings=[],thickHull=false,_eps=0) {
+module multipleStraight(dx,diams,spacings=[],thickHull=false,_eps=_EPSILON) {
     difference() {
         for(p=[1:2]) _multipleStraightPart(p,true,dx,diams,spacings,thickHull,_eps);
         for(p=[1:2]) _multipleStraightPart(p,false,dx,diams,spacings,thickHull,_eps);
@@ -242,17 +272,27 @@ module multipleStraight(dx,diams,spacings=[],thickHull=false,_eps=0) {
 
     partID 11: only hullbase no tube
     partID 12: only tubes no hull
+
+    partID 33: bridge all but first
+    partID 43: bridge all but last
+
+    partID 1xx: Same as xx but no first screw
+    partID 1yyy: Same as yyyy but no champfers
 */
-module _multipleStraightPart(partID,isOuter,dx,diams,spacings,thickHull,_eps) {
+module _multipleStraightPart(partID,isOuter,dx,diams,spacings,thickHull=false,_eps=_EPSILON) {
     diams=is_list(diams)?diams:[diams];
     diamsMax=len(diams)-1;
     spacings=is_list(spacings)?spacings:((diamsMax<1)?[]:[for(i=[0:diamsMax-1]) spacings]);
     
     // Offsets to position screw holes and rounding of base plate
-    screwOff=screwDistFromEdge(screwDiam,screwHead)*2;
+    screwOff=_screwDistFromEdge()*2;
+    
+    noChampfer=floor(partID/1000)==1;
+    noFirstScrew=floor((partID%1000)/100)==1;
+    partID=partID%100;
     
     // Inner and outer border plate width
-    plateInnerBorder=_plateInnerBorder(diams,screwOff,_eps);
+    plateInnerBorder=noFirstScrew?0:_plateInnerBorder(diams,screwOff,_eps);
     plateOuterBorder=_plateOuterBorder(diams,screwOff,_eps);
     
     /* Compute length of base plate */
@@ -265,43 +305,49 @@ module _multipleStraightPart(partID,isOuter,dx,diams,spacings,thickHull,_eps) {
     yS=(len(spacings)<len(diams))?
         [for(iD=[0:diamsMax]) plateInnerBorder+sigma0(spacings,iD)]:
         [for(iD=[0:diamsMax]) plateInnerBorder+sigma(spacings,iD)];
-        
+    
+    isSupport=partID==1;
+    isTubes=partID==2 || partID==11 || partID==12 || partID==3 || partID==33 || partID==43;
+    
     if(isOuter) {
         // support
-        if(partID==1)
-        tr(0,dy/2) roundedFlatBox(dx,dy,thk,rnd,center=true);
+        if(isSupport) tr(0,dy/2) roundedFlatBox(dx,dy,thk,rnd,center=true);
         
         // outer tubes
-        if(partID==2 || partID==11 || partID==12)
-        hullOrUnion(thickHull && (partID==2)) for(iD=[0:diamsMax]) {
-            hullOrUnion(!thickHull && (partID==2)) {
-                tr(-dx/2,yS[iD]) {
-                    if(partID==2 || partID==11) _hullcylPart(1,dx,diams[iD]+_eps);
-                    if(partID==2 || partID==12) _hullcylPart(2,dx,diams[iD]+_eps);
+        //if(partID==2 || partID==11 || partID==12)
+        if(isTubes)
+        hullOrUnion(thickHull && (partID==2)) {
+            for(iD=[0:diamsMax]) {
+                hullOrUnion(!thickHull && (partID==2)) {
+                    tr(-dx/2,yS[iD]) {
+                        if(partID==2 || partID==11) _hullcylPart(1,dx,diams[iD]+_eps);
+                        if(partID==2 || partID==12) _hullcylPart(2,dx,diams[iD]+_eps);
+                    }
                 }
             }
         }
     } else {
         // support screw holes
-        if(partID==1)
-        tr(0,dy/2) _screwHoles(dx,dy);
-
+        if(!noFirstScrew) tr(0,dy/2) _screwHoles(dx,dy);
+        else _trScrewHole(0,dy-_screwDistFromEdge());
+        
         // Inner tubes
-        if(partID==2 || partID==3)
-        for(iD=[0:diamsMax]) {
+        //if(partID==2 || partID==3)
+        if(isTubes) for(iD=[0:diamsMax]) {
             diam=diams[iD]+_eps;
             trrot(-_EPSILON-dx/2,yS[iD],zOff(diam),0,90,0) {
-                straightHole(diam,dx);
+                straightHole(diam,dx,noChampfer?undef:true);
 
-                if(partID==3) {
-                    // Bridge type of tube, remove qnd champfer bottom part
+                if(partID==3 || (partID==33 && iD>0) || (partID==43 && iD<diamsMax)) {
+                    // Bridge type of tube, remove and champfer bottom part
                     trcube_eps(0,-diam/2,0,zOff(diam)+_EPSILON,diam,dx+_EPSILON);
                     
-                    for(dy_a=[[-diam/2-ch/2,180],[diam/2,90]]) {
+                    if(!noChampfer)
+                    for(dy_a=[[-diam/2-champDepth/4,180],[diam/2,90]]) {
                         rot(0,90) tr(-champDepth,dy_a[0],0)
-                            prism(champDepth,ch/2,zOff(diam)+_EPSILON,dy_a[1]);
+                            prism(champDepth,champDepth/4,zOff(diam)+_EPSILON,dy_a[1]);
                         rot(180,-90) tr(-champDepth+dx+_EPSILON+_EPSILON,dy_a[0],0)
-                            prism(champDepth,ch/2,zOff(diam)+_EPSILON,dy_a[1]);
+                            prism(champDepth,champDepth/4,zOff(diam)+_EPSILON,dy_a[1]);
                     }
                 }
             }
@@ -310,48 +356,50 @@ module _multipleStraightPart(partID,isOuter,dx,diams,spacings,thickHull,_eps) {
 }
 
 module trStacked(i,diams,spacingsZ) {
-    trz((i==0)?0:(spacingsZ[i-1]==undef)?max(diams[i-1]):spacingsZ[i-1]) children();
+    trZ((i==0)?0:(spacingsZ[i-1]==undef)?max(diams[i-1]):spacingsZ[i-1]) children();
 }
 
 /* Generate multiple parallel supports 
     diamSpacings contains an array of spacings followed by diameter
-    supportLevel defines which level is used as the base
+    supportLevel defines which level is used to compute the base support size
     If there are as many or more spacings as tubes, the first is taken as an offset
 */
-module multipleStackedStraight(dx,diams,spacings=[],spacingsZ=undef,supportLevel=1,_eps=0) {
+module multipleStackedStraight(dx,diams,spacings=[],spacingsZ=undef,supportLevel=1,bridge=true,_eps=0) {
     spacingsZ=is_list(spacingsZ)?spacingsZ:[spacingsZ];
-        
+    
+    thickHull=true; // No other way for mutiple
     difference() {
         union() {
             // Support for selected level, not translated
-            _multipleStraightPart(1,true,dx,diams[supportLevel],spacings[supportLevel],false,_eps);
+            _multipleStraightPart(1,true,dx,diams[supportLevel],spacings[supportLevel],thickHull,_eps);
 
             _hull() {
                 // Support and tubes for bottom level
-                _multipleStraightPart(2,true,dx,diams[0],spacings[0],false,_eps);
+                _multipleStraightPart(2,true,dx,diams[0],spacings[0],thickHull,_eps);
                 
                 // tubes only for all levels above
                 for(i=[1:len(diams)-1]) {
-                    _multipleStraightPart(11,true,dx,diams[i],spacings[i],false,_eps);
+                    _multipleStraightPart(11,true,dx,diams[i],spacings[i],thickHull,_eps);
                     trStacked(i,diams,spacingsZ)
-                        _multipleStraightPart(12,true,dx,diams[i],spacings[i],false,_eps);
+                        _multipleStraightPart(12,true,dx,diams[i],spacings[i],thickHull,_eps);
                 }
             }
         }
         
         union() {
             // Support screws for selected level
-            _multipleStraightPart(1,false,dx,diams[supportLevel],spacings[supportLevel],false,_eps);
+            _multipleStraightPart(1,false,dx,diams[supportLevel],spacings[supportLevel],thickHull,_eps);
             
             // Tubes holes for all levels
             for(i=[0:len(diams)-1])
                 trStacked(i,diams,spacingsZ)
-                    _multipleStraightPart(i==0?3:2,false,dx,diams[i],spacings[i],false,_eps);
+                    _multipleStraightPart((bridge && i==0)?3:2,false,dx,diams[i],spacings[i],thickHull,_eps);
         }
     }
 }
 
-module straightSupport(dx,dy,diam,thickHull=false,_eps=0) difference() {
+/* Short hand for a straight support */
+module straightSupport(dx,dy,diam,thickHull=false,_eps=0) {
     multipleStraight(dx,dy,[dy/2,diam],thickHull,_eps);
 }
 
@@ -368,11 +416,11 @@ module cornerSupport(dx,dy,diam) difference() {
         // Central sphere
         _hull() {
             tr(-bw/2,-bw/2) roundedFlatBox(bw,bw,thk,rnd*2);
-            trz(zOff(diam)) sphere(d=diam+thk);
+            trZ(zOff(diam)) sphere(d=diam+thk);
         }
     }
 
-    trz(zOff(diam)) {
+    trZ(zOff(diam)) {
         _cylchamp(dx/2,diam);
         _cylchamp(dy/2,diam,-90);
         sphere(d=diam);
@@ -385,7 +433,7 @@ module cornerSupport(dx,dy,diam) difference() {
 module roundSupport(dx,dy,diam) {
     // Offset of the torus (torus radius)
     offT=diam/2+2*thk;
-    screwOff=screwDistFromEdge(screwDiam,screwHead)*2;
+    screwOff=_screwDistFromEdge()*2;
     rOff=dx/2-screwOff;
     dOff=(dx-screwOff)*2;
     difference() {
@@ -404,7 +452,7 @@ module roundSupport(dx,dy,diam) {
             tr(offT,offT,zOff(diam)) _hullify(thk,diam/2+thk/2) quarterTorus(offT,diam+thk);
         }
 
-        trz(zOff(diam)) {
+        trZ(zOff(diam)) {
             // Hole
             tr(offT-_EPSILON) _cylchamp(dx/2-offT+_EPSILON,diam);
             tr(0,offT-_EPSILON) _cylchamp(dy/2-offT+_EPSILON,diam,-90);
@@ -431,21 +479,23 @@ module turningPipeHull(inlet,outlet,thk,diam) {
     // outlet    
     tr(0,offT) _hullcyl(outlet-offT,diam,90,true);
 }
-/* Straight hole with champfers at both ends */
+/* Straight hole with champfers at both ends if both is false, only first side has champfer, if undef, no champfer */
 module straightHole(diam,length,both=true) {
     // Inner tube
     cyl_eps(diam,length);
                 
     // Champfers
-    cylinder(d1=diam+champDepth/2,d2=diam,champDepth+_EPSILON);
-    if(both) {
-        trcone(0,0,length-champDepth+2*_EPSILON,diam,diam+champDepth/2,champDepth+_EPSILON);
+    if(!is_undef(both)) {
+        cylinder(d1=diam+champDepth/2,d2=diam,champDepth+_EPSILON);
+        if(both) {
+            trcone(0,0,length-champDepth+2*_EPSILON,diam,diam+champDepth/2,champDepth+_EPSILON);
+        }
     }
 }
 
 /* Turning cylinder with champfers (to bore a hole */
 module turningHole(inlet,outlet,thk,diam) {
-    trz(zOff(diam)) {
+    trZ(zOff(diam)) {
         offT=diam/2+2*thk;
         // inlet
         tr(offT-_EPSILON) _cylchamp(inlet-offT+_EPSILON,diam);
@@ -458,6 +508,79 @@ module turningHole(inlet,outlet,thk,diam) {
     } 
 }
 
+//tee(20+.5,25+.5,29,false);
+module tee(diam,length,teeLength,oneSidePlate=false) {
+    plateBorder=(oneSidePlate)?diam/2:_plateBorder(diam/2);
+    difference() {
+        union() {
+            // support base
+            tr(-length,-plateBorder)
+            roundedFlatBox(length*2,teeLength+plateBorder,thk,rnd);
+            
+            // Two corners
+            turningPipeHull(length,teeLength,thk,diam);
+            rotZ() turningPipeHull(teeLength,length,thk,diam);
+            
+            // Straight tube with its base
+            tr(-length) _hullcyl(length*2,diam);
+            
+            // fill the top of the crossing area
+            trZ(thk/2+diam) _crossTee(diam,thk/2);
+            
+            // Optionally handle children nodes
+            if($children>1) children(0);
+        }
+        union() {
+            // Screw holes for plate
+            tr(0,teeLength/2) _twoYScrewHoles(length*2,teeLength);
+            if(!oneSidePlate) {
+                tr(0,-plateBorder/2) _twoYScrewHoles(length*2,-plateBorder);
+            }
+            
+            // Two corners
+            turningHole(length,teeLength,thk,diam);
+            rotZ() turningHole(teeLength,length,thk,diam);
+            
+            // Straight tube
+            tr(-length-_EPSILON,0,diam/2+thk/2) rotY() straightHole(diam,length*2);
+            
+            // Remove inner spikes that won't print hanging from ceiling
+            trZ(thk/2) _crossTee(diam,diam);
+            
+            // Optionally handle children nodes
+            if($children>1) for(c=[1:$children-1])children(c);
+                else if($children>0) children(0);
+        }
+    }
+}
+
+/* Generate the flat area at the crossing of tubes */
+module _crossTee(diam,h) {
+    offT=diam/2+2*thk;
+    tr(0,offT/2,h/2)
+    difference() {
+        cube([offT*2,offT,h],center=true);
+        trcyl_eps(offT,offT/2,0,offT*2,h+$_EPSILON,center=true);
+        trcyl_eps(-offT,offT/2,0,offT*2,h+$_EPSILON,center=true);
+    }
+}
+
+//tr(-20,52.5) rotZ(180) multipleStraight(20,[20+.5,20+.5,16+.5],[24,22],false,_EPSILON*3);
+
+teeWithSideStraight(20+.5,25+.5,25+.5,10,[16+.5],[22]);
+module teeWithSideStraight(diam,length,teeLength,sidePipesLength,sidePipeDiams,spacings) {
+    sidePipeDiams=[for(i=[0:len(sidePipeDiams)]) i==0?diam:sidePipeDiams[i-1] ];
+
+    tee(diam,length,teeLength,true) {
+        rotZ(180) for(p=[1101,1102]) _multipleStraightPart(p,true,sidePipesLength,sidePipeDiams,spacings,true);
+        rotZ(180) for(p=[1101,1133]) {
+            _multipleStraightPart(p,false,sidePipesLength,sidePipeDiams,spacings);
+            _multipleStraightPart(p,false,2*length,sidePipeDiams,spacings);
+        }
+//        tr(-length-_EPSILON,-spacings[0],sidePipeDiams[0]/2+thk/2) rotY() straightHole(sidePipeDiams[0],length*2);
+    }
+}
+
 module multipleRound(diams,spacingsX=[],spacingsY=[],_eps=0) {
     diams=is_list(diams)?diams:[diams];
     
@@ -466,7 +589,7 @@ module multipleRound(diams,spacingsX=[],spacingsY=[],_eps=0) {
     spacingsY=is_list(spacingsY)?((len(spacingsY)==0)?spacingsX:spacingsY):((diamsMax<1)?[]:[for(i=[0:diamsMax-1]) spacingsY]);
     
     // Offsets to position screw holes and rounding of base plate
-    screwOff=screwDistFromEdge(screwDiam,screwHead)*2;
+    screwOff=_screwDistFromEdge()*2;
     
     plateInnerBorder=_plateInnerBorder(diams,screwOff,_eps);
     plateOuterBorder=_plateOuterBorder(diams,screwOff,_eps);
@@ -505,7 +628,7 @@ module multipleRound(diams,spacingsX=[],spacingsY=[],_eps=0) {
             }
             
             /* Screw holes */
-            screwPos=screwDistFromEdge(screwDiam,screwHead);
+            screwPos=_screwDistFromEdge();
             
             // Inner hole 
             tr(dx/2-screwPos,dy/2-screwPos,-_EPSILON) _screwHole();
@@ -529,7 +652,7 @@ module _roundPlateOuterHole(plateRoudingRadius,dx,dy,screwPos) {
     tr(cx-rc/sqrt(2),cy-rc/sqrt(2),-_EPSILON) children();
 }
 
-/* Draw one the 3 children depending on ID. 0 for round, & straight along X, 2 along Y */
+/* Draw one the 3 children depending on ID. 0 for round, 1 straight along X, 2 along Y */
 module _drawSubParts(xS,yS,spacingsX,spacingsY,iD,numberOfTurning) {
     tr(-xS[iD],-yS[iD])
     if(iD>=numberOfTurning && (spacingsX[iD-1]==undef || spacingsY[iD-1]==undef)) {
@@ -559,7 +682,7 @@ module straightRound(diamsRnd,diamsStr,spacingsX=[],spacingsY=[],_eps=0) {
     diamsMax=len(diams)-1;
     
     // Offsets to position screw holes and rounding of base plate
-    screwOff=screwDistFromEdge(screwDiam,screwHead)*2;
+    screwOff=_screwDistFromEdge()*2;
     
     plateInnerBorder=_plateInnerBorder(diams,screwOff,_eps);
     plateOuterBorder=_plateOuterBorder(diams,screwOff,_eps);
@@ -606,7 +729,7 @@ module straightRound(diamsRnd,diamsStr,spacingsX=[],spacingsY=[],_eps=0) {
             }
             
             // Screw holes
-            screwPos=screwDistFromEdge(screwDiam,screwHead);
+            screwPos=_screwDistFromEdge();
             
             for(xH=[dx/2-screwPos,-(dx/2-screwPos)])
                 for(yH=[dy/2-screwPos,-(dy/2-screwPos)]) 
@@ -614,10 +737,6 @@ module straightRound(diamsRnd,diamsStr,spacingsX=[],spacingsY=[],_eps=0) {
         }
     }
 }
-
-/* Set details accuracy */
-$fn=GET_FN_CYL();
-//$fn=8;
 
 /* Generate a short (2 holes) straight support */
 //tr(40) 
@@ -681,4 +800,6 @@ $fn=GET_FN_CYL();
 //straightRound([20],[20],[23],[undef],_eps=_EPSILON*2);
 
 /* Two straight, two rounded */
-straightRound([20+.3,20+.3],[20+.3,16+.2],[23,23,20],[23],_eps=_EPSILON*2);
+//straightRound([20+.3,20+.3],[20+.3,16+.2],[23,23,20],[23],_eps=_EPSILON*2);
+
+//multipleStackedStraight(20,[[16+.5,20+.5,20+.5],[20+0.8]],[[41,24],[17]],[8],0,false,_eps=_EPSILON*3);
